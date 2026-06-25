@@ -173,6 +173,20 @@
       </div>
     </div>
 
+    <div class="card pad" id="syncCard" style="margin-bottom:18px">
+      <div class="cal-head">
+        <h2>Sync across phones</h2>
+        <span class="hint" id="syncStatus">Off</span>
+      </div>
+      <p class="note" style="text-align:left;margin:0 0 10px">Enter the <strong>same household code</strong> on both phones to share doses live.</p>
+      <input id="syncCode" class="btn" style="width:100%;text-align:center;letter-spacing:2px;font-size:18px;text-transform:uppercase" placeholder="HOUSEHOLD CODE" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" />
+      <div class="data" style="margin-top:10px">
+        <button class="btn brand" id="syncJoin">Connect</button>
+        <button class="btn" id="syncNew">New code</button>
+      </div>
+      <p class="note" id="syncHint" style="text-align:left">—</p>
+    </div>
+
     <div class="data">
       <button class="btn" id="exportBtn">Export backup</button>
       <button class="btn" id="importBtn">Import backup</button>
@@ -182,6 +196,7 @@
   </section>
 </div>
 
+<script src="vendor/supabase.js"></script>
 <script>
 "use strict";
 
@@ -191,6 +206,15 @@ const WINDOW_DAYS = 30;            // calendar days counted (incl. today)
 const TWO_DOSE_DAYS = CAP_DOSES / 2;
 const AMBER_REMAINING = 6;         // <= this many doses left -> amber
 const STORAGE_KEY = "eczema-doses-v1";
+
+/* ---------- Sync config (Supabase) ----------
+   These two values are filled in from your Supabase project.
+   They are safe to be public; your data is hidden behind the household code. */
+const SUPABASE_URL  = "https://dbcjtfdqoqlauozxodnn.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRiY2p0ZmRxb3FsYXVvenhvZG5uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0MDg2NDMsImV4cCI6MjA5Nzk4NDY0M30.LNaHSqpHDJR4c3MIVwG_PzTrhV_ClJxPTOvTJvtqOlI";
+const SYNC_AVAILABLE = !SUPABASE_URL.startsWith("__");
+const HOUSEHOLD_KEY = "eczema-household-v1";
+const PENDING_KEY   = "eczema-pending-v1";
 
 /* ---------- State ---------- */
 let store = load();
@@ -241,6 +265,7 @@ function setDose(key, slot, value){
 }
 function toggleDose(key, slot){
   setDose(key, slot, !entry(key)[slot]);
+  markDirty(key);
 }
 
 function doseCount(){
@@ -460,8 +485,174 @@ if("serviceWorker" in navigator){
   });
 }
 
+/* ================= Sync (Supabase) =================
+   Local data is the source of truth for the UI and always works offline.
+   When a household code is set, edits are pushed to Supabase and changes
+   from the other phone arrive live. Last write wins. */
+
+let sb = null;                                   // supabase client
+let channel = null;                              // realtime subscription
+let household = localStorage.getItem(HOUSEHOLD_KEY) || "";
+let pending = new Set(safeParse(localStorage.getItem(PENDING_KEY)) || []); // day keys not yet pushed
+let syncState = "off";                           // off | connecting | online | offline
+
+function safeParse(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
+function savePending(){ localStorage.setItem(PENDING_KEY, JSON.stringify([...pending])); }
+
+function setSyncState(s){ syncState = s; renderSyncUI(); }
+
+// Re-render whichever view is currently visible.
+function refresh(){
+  if(!$("view-today").classList.contains("hidden")) renderToday();
+  else { renderCalendar(); renderStatus(); }
+}
+
+// Queue a local edit for upload (called after every toggle).
+function markDirty(day){
+  if(!SYNC_AVAILABLE || !household) return;
+  pending.add(day);
+  savePending();
+  flush();
+}
+
+function genCode(){
+  const alpha = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // no ambiguous 0/O/1/I
+  const arr = new Uint32Array(7);
+  crypto.getRandomValues(arr);
+  return [...arr].map(n => alpha[n % alpha.length]).join("");
+}
+
+async function initSync(){
+  if(!SYNC_AVAILABLE){ setSyncState("off"); return; }
+  if(!household){ setSyncState("off"); return; }
+  if(!sb) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  await pull();
+  subscribe();
+  flush();
+}
+
+// Pull the whole household dataset and merge it in (local unsynced edits win).
+async function pull(){
+  if(!sb || !household) return;
+  try{
+    setSyncState("connecting");
+    const { data, error } = await sb.from("doses").select("*").eq("household", household);
+    if(error) throw error;
+    const merged = {};
+    for(const r of data){ if(r.m || r.e) merged[r.day] = { m:!!r.m, e:!!r.e }; }
+    for(const day of pending){               // keep not-yet-pushed local edits on top
+      if(store[day]) merged[day] = store[day]; else delete merged[day];
+    }
+    store = merged;
+    save();
+    refresh();
+    setSyncState(pending.size ? "offline" : "online");
+  }catch(e){ setSyncState("offline"); }
+}
+
+// Push every pending day to the server.
+async function flush(){
+  if(!sb || !household || !pending.size) return;
+  for(const day of [...pending]){
+    try{
+      const e = store[day];
+      if(!e || (!e.m && !e.e)){
+        const { error } = await sb.from("doses").delete().eq("household", household).eq("day", day);
+        if(error) throw error;
+      }else{
+        const { error } = await sb.from("doses")
+          .upsert({ household, day, m:!!e.m, e:!!e.e, updated_at:new Date().toISOString() });
+        if(error) throw error;
+      }
+      pending.delete(day);
+      savePending();
+    }catch(err){ setSyncState("offline"); return; }
+  }
+  setSyncState("online");
+}
+
+function subscribe(){
+  if(!sb || !household) return;
+  if(channel){ sb.removeChannel(channel); channel = null; }
+  channel = sb.channel("doses-" + household)
+    .on("postgres_changes",
+      { event:"*", schema:"public", table:"doses", filter:"household=eq." + household },
+      (payload) => {
+        const row = payload.new && payload.new.day ? payload.new : payload.old;
+        if(!row || !row.day) return;
+        const day = row.day;
+        if(pending.has(day)) return;          // our own change echoing back
+        if(payload.eventType === "DELETE" || (payload.new && !payload.new.m && !payload.new.e)){
+          delete store[day];
+        }else{
+          store[day] = { m:!!payload.new.m, e:!!payload.new.e };
+        }
+        save();
+        refresh();
+      })
+    .subscribe((status) => { if(status === "SUBSCRIBED" && !pending.size) setSyncState("online"); });
+}
+
+function disconnect(){
+  if(channel && sb){ sb.removeChannel(channel); channel = null; }
+  household = "";
+  localStorage.removeItem(HOUSEHOLD_KEY);
+  setSyncState("off");                          // local data is kept
+}
+
+/* ---- Sync UI ---- */
+function renderSyncUI(){
+  const status = $("syncStatus"), hint = $("syncHint"),
+        join = $("syncJoin"), neu = $("syncNew"), code = $("syncCode");
+  if(!status) return;
+
+  if(!SYNC_AVAILABLE){
+    status.textContent = "unavailable";
+    hint.textContent = "Live sync isn't set up for this app yet.";
+    join.disabled = neu.disabled = true;
+    code.disabled = true;
+    return;
+  }
+  if(household){
+    if(document.activeElement !== code) code.value = household;
+    const label = { online:"Synced ✓", connecting:"Connecting…",
+                    offline:"Offline — will sync", off:"On" }[syncState] || "On";
+    status.textContent = label;
+    join.textContent = "Reconnect";
+    hint.innerHTML = `Connected with code <strong>${household}</strong>. Enter this same code on the other phone. ` +
+                     `<a href="#" id="syncOff">Disconnect this phone</a>`;
+    const off = $("syncOff");
+    if(off) off.addEventListener("click", (e) => { e.preventDefault(); disconnect(); });
+  }else{
+    status.textContent = "Off";
+    join.textContent = "Connect";
+    hint.innerHTML = "Tap <strong>New code</strong> to create one, then enter that same code on the other phone.";
+  }
+}
+
+if($("syncNew")) $("syncNew").addEventListener("click", () => {
+  $("syncCode").value = genCode();
+  $("syncCode").focus();
+});
+if($("syncJoin")) $("syncJoin").addEventListener("click", async () => {
+  const v = ($("syncCode").value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if(v.length < 4){ alert("Enter a code of at least 4 letters/numbers (or tap “New code”)."); return; }
+  household = v;
+  localStorage.setItem(HOUSEHOLD_KEY, household);
+  setSyncState("connecting");
+  await initSync();
+});
+
+// Re-sync when coming back online or reopening the app.
+window.addEventListener("online", () => { if(sb && household) pull().then(flush); });
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden && sb && household) pull().then(flush);
+});
+
 /* ---------- Boot ---------- */
 renderToday();
+renderSyncUI();
+initSync();
 </script>
 </body>
 </html>

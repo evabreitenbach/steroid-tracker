@@ -1,9 +1,10 @@
 /* Service worker: offline app shell for Steroid Tracker. */
-const CACHE = "steroid-tracker-v1";
+const CACHE = "steroid-tracker-v2";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
+  "./vendor/supabase.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png"
@@ -26,6 +27,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if(req.method !== "GET") return;
+
+  // Only the app's own files are cached. Let Supabase (and any other
+  // cross-origin) requests go straight to the network, always fresh.
+  if(new URL(req.url).origin !== self.location.origin) return;
 
   // Network-first for the HTML document so updates land; fall back to cache offline.
   if(req.mode === "navigate"){
