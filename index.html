@@ -532,19 +532,32 @@ async function initSync(){
   flush();
 }
 
-// Pull the whole household dataset and merge it in (local unsynced edits win).
+// Pull the household dataset and MERGE it into local data.
+// Local data is never discarded by a pull: server rows are merged in, and any
+// day we have locally that the server has never seen is queued for upload
+// instead of being deleted. This is what prevents an empty or partial server
+// response (e.g. first launch after connecting, or an RLS hiccup) from wiping
+// all local history — the bug that erased earlier data.
 async function pull(){
   if(!sb || !household) return;
   try{
     setSyncState("connecting");
     const { data, error } = await sb.from("doses").select("*").eq("household", household);
     if(error) throw error;
-    const merged = {};
-    for(const r of data){ if(r.m || r.e) merged[r.day] = { m:!!r.m, e:!!r.e }; }
-    for(const day of pending){               // keep not-yet-pushed local edits on top
-      if(store[day]) merged[day] = store[day]; else delete merged[day];
+
+    const serverDays = new Set();
+    for(const r of data){
+      serverDays.add(r.day);
+      if(pending.has(r.day)) continue;          // local unsynced edit wins
+      if(r.m || r.e) store[r.day] = { m:!!r.m, e:!!r.e };
+      else delete store[r.day];                 // server explicitly tombstoned it
     }
-    store = merged;
+    // Days present locally but absent from the server were never uploaded —
+    // keep them and queue them for upload rather than deleting them.
+    for(const day of Object.keys(store)){
+      if(!serverDays.has(day) && !pending.has(day)) pending.add(day);
+    }
+    savePending();
     save();
     refresh();
     setSyncState(pending.size ? "offline" : "online");
