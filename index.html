@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Steroid Tracker</title>
+<meta name="theme-color" content="#0f766e" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Steroid" />
+<style>
+  :root{
+    --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --brand:#0f766e; --brand-ink:#0b5c55;
+    --green:#16a34a; --green-bg:#dcfce7;
+    --amber:#d97706; --amber-bg:#fef3c7;
+    --red:#dc2626; --red-bg:#fee2e2;
+    --shadow:0 1px 3px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .app{max-width:520px; margin:0 auto; padding:16px 16px 40px}
+  header.top{display:flex; align-items:center; justify-content:space-between; margin:8px 2px 18px}
+  header.top h1{font-size:18px; margin:0; letter-spacing:.2px}
+  header.top h1 span{color:var(--brand)}
+  .tabs{display:inline-flex; background:#eef2f6; border-radius:999px; padding:3px}
+  .tabs button{
+    border:0; background:transparent; color:var(--muted); font-weight:600;
+    font-size:13px; padding:7px 14px; border-radius:999px; cursor:pointer;
+  }
+  .tabs button.active{background:#fff; color:var(--ink); box-shadow:var(--shadow)}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow)}
+
+  /* ---- Today ---- */
+  .today-date{font-size:13px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.6px}
+  .today-big{font-size:26px; font-weight:700; margin:2px 0 16px}
+  .doses{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .dose{
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding:18px 12px; border-radius:16px; border:2px solid var(--line);
+    background:#fff; cursor:pointer; user-select:none; transition:.15s;
+  }
+  .dose .label{font-size:14px; font-weight:600; color:var(--muted)}
+  .dose .mark{
+    width:52px; height:52px; border-radius:50%; border:2px solid var(--line);
+    display:flex; align-items:center; justify-content:center; font-size:26px; color:#fff;
+    background:#fff; transition:.15s;
+  }
+  .dose.on{border-color:var(--brand); background:#f0fdfa}
+  .dose.on .label{color:var(--brand-ink)}
+  .dose.on .mark{background:var(--brand); border-color:var(--brand)}
+  .dose .mark svg{width:26px; height:26px; opacity:0; transition:.15s}
+  .dose.on .mark svg{opacity:1}
+
+  /* ---- Status ---- */
+  .status{margin-top:16px; padding:18px}
+  .status.green{background:var(--green-bg)}
+  .status.amber{background:var(--amber-bg)}
+  .status.red{background:var(--red-bg)}
+  .status .headline{font-size:30px; font-weight:800; line-height:1}
+  .status.green .headline{color:var(--green)}
+  .status.amber .headline{color:var(--amber)}
+  .status.red .headline{color:var(--red)}
+  .status .sub{margin-top:6px; font-size:15px; font-weight:600; color:var(--ink)}
+  .status .plain{margin-top:10px; font-size:14px; color:var(--ink); opacity:.85; line-height:1.4}
+  .bar{height:10px; border-radius:999px; background:#ffffff90; margin-top:14px; overflow:hidden}
+  .bar > i{display:block; height:100%; border-radius:999px; transition:width .25s}
+  .status.green .bar>i{background:var(--green)}
+  .status.amber .bar>i{background:var(--amber)}
+  .status.red .bar>i{background:var(--red)}
+
+  /* ---- Calendar ---- */
+  .cal-head{display:flex; align-items:baseline; justify-content:space-between; margin:2px 2px 12px}
+  .cal-head h2{font-size:16px; margin:0}
+  .cal-head .hint{font-size:12px; color:var(--muted)}
+  .weekdays,.grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px}
+  .weekdays{margin-bottom:6px}
+  .weekdays span{text-align:center; font-size:11px; color:var(--muted); font-weight:600}
+  .cell{
+    border:1px solid var(--line); border-radius:12px; background:#fff;
+    min-height:60px; padding:5px 4px 6px; display:flex; flex-direction:column; align-items:center;
+  }
+  .cell.empty{border:0; background:transparent}
+  .cell.today{border-color:var(--brand); box-shadow:0 0 0 1px var(--brand)}
+  .cell .dnum{font-size:11px; color:var(--muted); font-weight:600; line-height:1; margin-bottom:6px}
+  .cell.today .dnum{color:var(--brand); font-weight:700}
+  .dots{display:flex; gap:6px; margin-top:auto; padding-bottom:2px}
+  .dot{
+    width:16px; height:16px; border-radius:50%; border:1.5px solid #cbd5e1;
+    background:#fff; cursor:pointer; padding:0; -webkit-tap-highlight-color:transparent;
+  }
+  .dot.on{background:var(--brand); border-color:var(--brand)}
+  .legend{display:flex; gap:16px; justify-content:center; margin-top:14px; font-size:12px; color:var(--muted)}
+  .legend i{display:inline-block; width:11px; height:11px; border-radius:50%; vertical-align:-1px; margin-right:5px}
+  .legend i.on{background:var(--brand)}
+  .legend i.off{border:1.5px solid #cbd5e1}
+
+  /* ---- Data buttons ---- */
+  .data{display:flex; gap:10px; margin-top:18px}
+  .btn{
+    flex:1; border:1px solid var(--line); background:#fff; color:var(--ink);
+    font-weight:600; font-size:14px; padding:12px; border-radius:12px; cursor:pointer;
+  }
+  .btn.brand{background:var(--brand); color:#fff; border-color:var(--brand)}
+  .install{margin-top:12px}
+  .note{font-size:12px; color:var(--muted); text-align:center; margin-top:14px; line-height:1.5}
+  .hidden{display:none}
+  .pad{padding:18px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1><span>●</span> Steroid Tracker</h1>
+    <div class="tabs">
+      <button id="tab-today" class="active">Today</button>
+      <button id="tab-cal">Calendar</button>
+    </div>
+  </header>
+
+  <!-- TODAY VIEW -->
+  <section id="view-today">
+    <div class="card pad">
+      <div class="today-date" id="todayDow">—</div>
+      <div class="today-big" id="todayDate">—</div>
+      <div class="doses">
+        <div class="dose" id="doseM" role="checkbox" aria-checked="false" tabindex="0">
+          <div class="label">Morning</div>
+          <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"/></svg></div>
+        </div>
+        <div class="dose" id="doseE" role="checkbox" aria-checked="false" tabindex="0">
+          <div class="label">Evening</div>
+          <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"/></svg></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card status green" id="status">
+      <div class="headline" id="stHeadline">0 / 15</div>
+      <div class="sub" id="stSub">0 / 30 doses</div>
+      <div class="plain" id="stPlain">—</div>
+      <div class="bar"><i id="stBar" style="width:0%"></i></div>
+    </div>
+
+    <button class="btn brand install hidden" id="installBtn">Install app to home screen</button>
+    <p class="note" id="iosNote">Counts every dose in the last 30 calendar days, including today.</p>
+  </section>
+
+  <!-- CALENDAR VIEW -->
+  <section id="view-cal" class="hidden">
+    <div class="card pad">
+      <div class="cal-head">
+        <h2>Last 30 days</h2>
+        <span class="hint">Tap a dot to toggle</span>
+      </div>
+      <div class="weekdays">
+        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="legend">
+        <span><i class="on"></i>Dose logged</span>
+        <span><i class="off"></i>No dose</span>
+      </div>
+    </div>
+
+    <div class="data">
+      <button class="btn" id="exportBtn">Export backup</button>
+      <button class="btn" id="importBtn">Import backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" class="hidden" />
+    </div>
+    <p class="note">Backups are plain JSON. Import replaces all current data.</p>
+  </section>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- Config ---------- */
+const CAP_DOSES   = 30;            // hard cap over the window
+const WINDOW_DAYS = 30;            // calendar days counted (incl. today)
+const TWO_DOSE_DAYS = CAP_DOSES / 2;
+const AMBER_REMAINING = 6;         // <= this many doses left -> amber
+const STORAGE_KEY = "eczema-doses-v1";
+
+/* ---------- State ---------- */
+let store = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === "object") ? obj : {};
+  }catch(e){ return {}; }
+}
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }catch(e){}
+}
+
+/* ---------- Date helpers (local calendar dates) ---------- */
+function dateKey(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function startOfToday(){ const d = new Date(); d.setHours(0,0,0,0); return d; }
+function todayKey(){ return dateKey(startOfToday()); }
+
+// Oldest-first list of the WINDOW_DAYS dates ending today.
+function windowDates(){
+  const t = startOfToday();
+  const out = [];
+  for(let i = WINDOW_DAYS - 1; i >= 0; i--){
+    const d = new Date(t);
+    d.setDate(t.getDate() - i);
+    out.push(dateKey(d));
+  }
+  return out;
+}
+
+/* ---------- Dose accounting ---------- */
+function entry(key){ return store[key] || {m:false, e:false}; }
+
+function setDose(key, slot, value){
+  const e = {...entry(key)};
+  e[slot] = value;
+  if(!e.m && !e.e) delete store[key];   // keep storage tidy
+  else store[key] = e;
+  save();
+}
+function toggleDose(key, slot){
+  setDose(key, slot, !entry(key)[slot]);
+}
+
+function doseCount(){
+  let n = 0;
+  for(const k of windowDates()){
+    const e = store[k];
+    if(e){ if(e.m) n++; if(e.e) n++; }
+  }
+  return n;
+}
+
+// "6½" style formatting of two-dose-days from a raw dose count.
+function fmtHalfDays(doses){
+  const whole = Math.floor(doses/2);
+  const half = (doses % 2) ? "½" : "";
+  if(whole === 0 && half === "") return "0";
+  return `${whole === 0 ? "" : whole}${half}`;
+}
+
+/* ---------- Rendering ---------- */
+const $ = (id) => document.getElementById(id);
+
+function renderToday(){
+  const now = new Date();
+  $("todayDow").textContent = now.toLocaleDateString(undefined, {weekday:"long"});
+  $("todayDate").textContent = now.toLocaleDateString(undefined, {month:"long", day:"numeric", year:"numeric"});
+
+  const tk = todayKey();
+  const e = entry(tk);
+  $("doseM").classList.toggle("on", !!e.m);
+  $("doseE").classList.toggle("on", !!e.e);
+  $("doseM").setAttribute("aria-checked", !!e.m);
+  $("doseE").setAttribute("aria-checked", !!e.e);
+
+  renderStatus();
+}
+
+function renderStatus(){
+  const doses = doseCount();
+  const remaining = CAP_DOSES - doses;
+
+  $("stHeadline").textContent = `${fmtHalfDays(doses)} / ${TWO_DOSE_DAYS} two-dose days`;
+  $("stSub").textContent = `${doses} / ${CAP_DOSES} doses`;
+
+  let plain, cls;
+  if(remaining <= 0){
+    cls = "red";
+    const over = Math.abs(remaining);
+    plain = over === 0
+      ? "You've reached the 30-dose cap for this window. Hold off — not clear to dose."
+      : `You're ${over} dose${over===1?"":"s"} over the 30-dose cap. Hold off — not clear to dose.`;
+  } else if(remaining <= AMBER_REMAINING){
+    cls = "amber";
+    plain = `${remaining} dose${remaining===1?"":"s"} remaining before the cap. Clear to dose, but you're getting close.`;
+  } else {
+    cls = "green";
+    plain = `${remaining} doses remaining before the cap. Clear to dose.`;
+  }
+
+  $("stPlain").textContent = plain;
+  const st = $("status");
+  st.classList.remove("green","amber","red");
+  st.classList.add(cls);
+
+  const pct = Math.min(100, Math.round((doses / CAP_DOSES) * 100));
+  $("stBar").style.width = pct + "%";
+}
+
+function renderCalendar(){
+  const grid = $("grid");
+  grid.innerHTML = "";
+  const dates = windowDates();          // oldest -> newest
+  const tk = todayKey();
+
+  // Leading blanks so the first day lands under its weekday column.
+  const firstDow = new Date(dates[0] + "T00:00:00").getDay();
+  for(let i = 0; i < firstDow; i++){
+    const blank = document.createElement("div");
+    blank.className = "cell empty";
+    grid.appendChild(blank);
+  }
+
+  for(const key of dates){
+    const e = entry(key);
+    const d = new Date(key + "T00:00:00");
+    const cell = document.createElement("div");
+    cell.className = "cell" + (key === tk ? " today" : "");
+
+    const dnum = document.createElement("div");
+    dnum.className = "dnum";
+    dnum.textContent = d.getDate();
+    cell.appendChild(dnum);
+
+    const dots = document.createElement("div");
+    dots.className = "dots";
+    for(const slot of ["m","e"]){
+      const b = document.createElement("button");
+      b.className = "dot" + (e[slot] ? " on" : "");
+      b.setAttribute("aria-label",
+        `${d.toLocaleDateString(undefined,{month:"short",day:"numeric"})} ${slot==="m"?"morning":"evening"} dose`);
+      b.setAttribute("aria-pressed", !!e[slot]);
+      b.addEventListener("click", () => {
+        toggleDose(key, slot);
+        renderCalendar();
+        renderStatus();
+      });
+      dots.appendChild(b);
+    }
+    cell.appendChild(dots);
+    grid.appendChild(cell);
+  }
+}
+
+/* ---------- Today checkbox interactions ---------- */
+function bindDose(elId, slot){
+  const el = $(elId);
+  const fire = () => {
+    toggleDose(todayKey(), slot);
+    renderToday();
+  };
+  el.addEventListener("click", fire);
+  el.addEventListener("keydown", (ev) => {
+    if(ev.key === " " || ev.key === "Enter"){ ev.preventDefault(); fire(); }
+  });
+}
+bindDose("doseM","m");
+bindDose("doseE","e");
+
+/* ---------- Tabs ---------- */
+function show(view){
+  const today = view === "today";
+  $("view-today").classList.toggle("hidden", !today);
+  $("view-cal").classList.toggle("hidden", today);
+  $("tab-today").classList.toggle("active", today);
+  $("tab-cal").classList.toggle("active", !today);
+  if(today) renderToday(); else renderCalendar();
+}
+$("tab-today").addEventListener("click", () => show("today"));
+$("tab-cal").addEventListener("click", () => show("cal"));
+
+/* ---------- Export / Import ---------- */
+$("exportBtn").addEventListener("click", () => {
+  const payload = { app:"eczema-steroid-tracker", version:1, exportedAt:new Date().toISOString(), doses:store };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `steroid-doses-${todayKey()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+$("importBtn").addEventListener("click", () => $("importFile").click());
+$("importFile").addEventListener("change", (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const parsed = JSON.parse(reader.result);
+      const data = parsed && parsed.doses ? parsed.doses : parsed;
+      if(!data || typeof data !== "object") throw new Error("bad shape");
+      // Validate / normalize entries.
+      const clean = {};
+      for(const [k,v] of Object.entries(data)){
+        if(/^\d{4}-\d{2}-\d{2}$/.test(k) && v && typeof v === "object"){
+          const m = !!v.m, e = !!v.e;
+          if(m || e) clean[k] = {m, e};
+        }
+      }
+      if(!confirm(`Import ${Object.keys(clean).length} day(s)? This replaces your current data.`)) return;
+      store = clean;
+      save();
+      show("cal");
+      renderToday();
+      alert("Backup imported.");
+    }catch(err){
+      alert("Could not read that file — is it a valid backup JSON?");
+    }finally{
+      $("importFile").value = "";
+    }
+  };
+  reader.readAsText(file);
+});
+
+/* ---------- Install prompt ---------- */
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  $("installBtn").classList.remove("hidden");
+});
+$("installBtn").addEventListener("click", async () => {
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  $("installBtn").classList.add("hidden");
+});
+window.addEventListener("appinstalled", () => $("installBtn").classList.add("hidden"));
+
+// iOS hint (no beforeinstallprompt there)
+(function iosHint(){
+  const isiOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = window.navigator.standalone || window.matchMedia("(display-mode: standalone)").matches;
+  if(isiOS && !standalone){
+    $("iosNote").innerHTML = "To install: tap <strong>Share</strong> → <strong>Add to Home Screen</strong>.";
+  }
+})();
+
+/* ---------- Service worker ---------- */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  });
+}
+
+/* ---------- Boot ---------- */
+renderToday();
+</script>
+</body>
+</html>
