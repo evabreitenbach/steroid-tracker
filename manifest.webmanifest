@@ -1,6 +1,6 @@
 {
-  "name": "Steroid Tracker",
-  "short_name": "Steroid",
+  "name": "Checkzema",
+  "short_name": "Checkzema",
   "description": "Track morning and evening steroid doses against a 30-dose / 30-day cap.",
   "start_url": "./index.html",
   "scope": "./",
