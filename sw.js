@@ -1,5 +1,5 @@
 /* Service worker: offline app shell for Steroid Tracker. */
-const CACHE = "steroid-tracker-v2";
+const CACHE = "steroid-tracker-v3";
 const ASSETS = [
   "./",
   "./index.html",

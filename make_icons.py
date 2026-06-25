@@ -28,10 +28,37 @@ def png(width, height, pixels):
     return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
 
 
+def _in_rounded_rect(u, v, x0, y0, x1, y1, r):
+    if u < x0 or u > x1 or v < y0 or v > y1:
+        return False
+    dx = max(x0 + r - u, u - (x1 - r), 0.0)
+    dy = max(y0 + r - v, v - (y1 - r), 0.0)
+    return dx * dx + dy * dy <= r * r
+
+
+def diaper_region(u, v):
+    """Classify a point in unit-square coords: 0 none, 1 fabric, 2 waistband."""
+    # Body: a wide rounded brief filling the top, before leg cutouts.
+    if not _in_rounded_rect(u, v, 0.15, 0.26, 0.85, 0.73, 0.11):
+        return 0
+
+    # Carve the two leg openings: circles biting up into the lower sides,
+    # leaving a narrow rounded crotch tab in the middle.
+    lr = 0.42
+    if (u - 0.10) ** 2 + (v - 0.94) ** 2 < lr * lr:
+        return 0
+    if (u - 0.90) ** 2 + (v - 0.94) ** 2 < lr * lr:
+        return 0
+
+    # Elastic waistband stripe near the top.
+    if 0.30 <= v <= 0.355:
+        return 2
+    return 1
+
+
 def draw(size):
     px = [(0, 0, 0, 0)] * (size * size)
     radius = size * 0.22          # rounded-corner radius
-    cx, cy = size / 2, size / 2
 
     def rounded_alpha(x, y):
         # distance into rounded-rect corners for anti-aliased edge
@@ -40,10 +67,8 @@ def draw(size):
         d = math.hypot(dx, dy)
         return max(0.0, min(1.0, radius - d + 0.5))
 
-    # Droplet geometry: teardrop = circle bottom + triangle top
-    dr = size * 0.20             # droplet circle radius
-    dcx, dcy = cx, cy + size * 0.10
-    tip_y = cy - size * 0.26
+    SS = 3                         # supersampling grid for smooth diaper edges
+    offs = [(k + 0.5) / SS for k in range(SS)]
 
     for y in range(size):
         for x in range(size):
@@ -51,26 +76,33 @@ def draw(size):
             ra = rounded_alpha(x + 0.5, y + 0.5)
             if ra <= 0:
                 continue
-            r, g, b = BG
 
-            # droplet body (lower circle)
-            ddx, ddy = (x + 0.5) - dcx, (y + 0.5) - dcy
-            in_circle = math.hypot(ddx, ddy) <= dr
-            # droplet point (triangle narrowing to tip)
-            in_point = False
-            if tip_y <= (y + 0.5) <= dcy:
-                t = ((y + 0.5) - tip_y) / (dcy - tip_y)
-                halfw = dr * t
-                if abs((x + 0.5) - dcx) <= halfw:
-                    in_point = True
-            if in_circle or in_point:
-                r, g, b = DROP
-                # subtle highlight on the droplet
-                if math.hypot(ddx + dr * 0.3, ddy + dr * 0.3) <= dr * 0.35:
-                    r, g, b = (255, 255, 255)
+            cr = cg = cb = 0.0
+            n_in = 0
+            for sy in offs:
+                v = (y + sy) / size
+                for sx in offs:
+                    u = (x + sx) / size
+                    reg = diaper_region(u, v)
+                    if reg == 0:
+                        continue
+                    n_in += 1
+                    if reg == 2:
+                        cr += ACCENT[0]; cg += ACCENT[1]; cb += ACCENT[2]
+                    else:
+                        cr += DROP[0]; cg += DROP[1]; cb += DROP[2]
 
-            a = int(255 * ra)
-            px[i] = (r, g, b, a)
+            total = SS * SS
+            frac = n_in / total
+            if n_in:
+                dr_, dg_, db_ = cr / n_in, cg / n_in, cb / n_in
+            else:
+                dr_ = dg_ = db_ = 0.0
+            r = round(BG[0] * (1 - frac) + dr_ * frac)
+            g = round(BG[1] * (1 - frac) + dg_ * frac)
+            b = round(BG[2] * (1 - frac) + db_ * frac)
+
+            px[i] = (r, g, b, int(255 * ra))
     return px
 
 
