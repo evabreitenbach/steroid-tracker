@@ -105,6 +105,17 @@
   .legend i.on{background:var(--brand)}
   .legend i.off{border:1.5px solid #cbd5e1}
 
+  /* ---- Past months ---- */
+  .month-row{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:10px 2px; border-bottom:1px solid var(--line);
+  }
+  .month-row:last-child{border-bottom:0; padding-bottom:2px}
+  .month-row:first-child{padding-top:2px}
+  .month-row .mname{font-size:14px; font-weight:600}
+  .month-row .mcount{font-size:14px; font-weight:700; color:var(--brand-ink)}
+  .month-row .mcount.zero{color:var(--muted); font-weight:600}
+
   /* ---- Data buttons ---- */
   .data{display:flex; gap:10px; margin-top:18px}
   .btn{
@@ -172,7 +183,15 @@
       </div>
     </div>
 
-    <div class="card pad" id="syncCard" style="margin-bottom:18px">
+    <div class="card pad hidden" id="monthsCard" style="margin-top:16px">
+      <div class="cal-head">
+        <h2>Past months</h2>
+        <span class="hint">Days dosed</span>
+      </div>
+      <div id="monthsList"></div>
+    </div>
+
+    <div class="card pad" id="syncCard" style="margin-top:16px;margin-bottom:18px">
       <div class="cal-head">
         <h2>Sync across phones</h2>
         <span class="hint" id="syncStatus">Off</span>
@@ -377,6 +396,68 @@ function renderCalendar(){
     }
     cell.appendChild(dots);
     grid.appendChild(cell);
+  }
+
+  renderMonths();
+}
+
+// List every completed month (before the current one) from the first logged
+// dose onward, with how many two-dose days were used that month.
+function renderMonths(){
+  const card = $("monthsCard"), list = $("monthsList");
+  if(!card) return;
+
+  // Doses per "YYYY-MM", from all stored days.
+  const perMonth = {};
+  for(const [k, e] of Object.entries(store)){
+    const doses = (e.m ? 1 : 0) + (e.e ? 1 : 0);
+    if(!doses) continue;
+    const mk = k.slice(0, 7);
+    perMonth[mk] = (perMonth[mk] || 0) + doses;
+  }
+
+  const now = startOfToday();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const monthsWithData = Object.keys(perMonth).filter(mk => mk < thisMonth).sort();
+
+  if(!monthsWithData.length){
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  list.innerHTML = "";
+
+  // Walk month by month from the earliest logged month up to last month,
+  // newest first, including in-between months with zero doses.
+  const rows = [];
+  let cur = new Date(monthsWithData[0] + "-01T00:00:00");
+  while(true){
+    const mk = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}`;
+    if(mk >= thisMonth) break;
+    rows.push(mk);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  rows.reverse();
+
+  for(const mk of rows){
+    const d = new Date(mk + "-01T00:00:00");
+    const sameYear = d.getFullYear() === now.getFullYear();
+    const name = d.toLocaleDateString(undefined, sameYear ? {month:"long"} : {month:"long", year:"numeric"});
+    const doses = perMonth[mk] || 0;
+    const days = fmtHalfDays(doses);
+    const word = doses === 1 || doses === 2 ? "day" : "days";
+
+    const row = document.createElement("div");
+    row.className = "month-row";
+    const mname = document.createElement("span");
+    mname.className = "mname";
+    mname.textContent = name;
+    const mcount = document.createElement("span");
+    mcount.className = "mcount" + (doses === 0 ? " zero" : "");
+    mcount.textContent = doses === 0 ? "No doses" : `${days} ${word}`;
+    row.appendChild(mname);
+    row.appendChild(mcount);
+    list.appendChild(row);
   }
 }
 
